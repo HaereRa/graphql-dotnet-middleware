@@ -53,7 +53,7 @@ namespace GraphQL.Middleware
 
             var response = context.Response;
 
-            response.ContentType = "application/json";
+            response.ContentType = "application/json; charset=utf-8";
             // Add content-type utf8 here?
 
             // Set the status code based on the outcome of the result
