@@ -3,12 +3,16 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using GraphQL.Middleware.Services;
-using GraphQL.Middleware.ViewModels;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection;
+
 using Newtonsoft.Json;
+
+using GraphQL.Middleware.Services;
+using GraphQL.Middleware.ViewModels;
+using GraphQL.Http;
 
 namespace GraphQL.Middleware
 {
@@ -45,18 +49,29 @@ namespace GraphQL.Middleware
             // Execute query
             var result = await graphQLService.ExecuteQueryAsync(query.Query, query.Variables, query.OperationName, context.User, cancellationToken);
 
+            var docuemntwriter = new DocumentWriter(true);
+
             var response = context.Response;
 
-            if (result.Errors?.Count > 0)
-            {
-                response.StatusCode = StatusCodes.Status400BadRequest;
-            }
-            else
-            {
-                response.StatusCode = StatusCodes.Status200OK;
-            }
             response.ContentType = "application/json";
-            WriteResult(response.Body, result);
+            // Add content-type utf8 here?
+
+            // Set the status code based on the outcome of the result
+            response.StatusCode = (result.Errors?.Count > 0)
+                ? StatusCodes.Status400BadRequest
+                : StatusCodes.Status200OK;
+
+            // Create a text writer much like ASP.Net's MVC ContentResultExecutor
+            using (var textWriter = new HttpResponseStreamWriter(response.Body, Encoding.UTF8, 16 * 1024))
+            {
+                var content = docuemntwriter.Write(result);
+
+                response.ContentLength = Encoding.UTF8.GetByteCount(content);
+
+                await textWriter.WriteAsync(content);
+
+                await textWriter.FlushAsync();
+            }
         }
 
         /// <summary>
@@ -73,22 +88,6 @@ namespace GraphQL.Middleware
                 reader.CloseInput = false;
                 var jsonSerialiser = JsonSerializer.Create();
                 return jsonSerialiser.Deserialize<TObject>(reader);
-            }
-        }
-
-        /// <summary>
-        /// Serialises the <typeparamref name="TObject"/> as JSON to the outut
-        /// </summary>
-        /// <param name="output"></param>
-        /// <param name="body"></param>
-        private void WriteResult<TObject>(Stream output, TObject body)
-        {
-            using (var writer = new JsonTextWriter(new StreamWriter(output, Encoding.UTF8)))
-            {
-                writer.CloseOutput = false;
-
-                var jsonSerialiser = JsonSerializer.Create();
-                jsonSerialiser.Serialize(writer, body);
             }
         }
     }
